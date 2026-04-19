@@ -4,9 +4,9 @@
 
 **Get your missing clips back, fast.**
 
-Works on free DaVinci Resolve and Studio. Runs entirely on your own machine.
+Runs entirely on your own machine. Requires DaVinci Resolve **Studio** 19.1 or newer.
 
-[![Resolve](https://img.shields.io/badge/DaVinci%20Resolve-18%2B-ff3e00?logo=davinciresolve)](https://www.blackmagicdesign.com/products/davinciresolve)
+[![Resolve](https://img.shields.io/badge/DaVinci%20Resolve-Studio%2019.1%2B-ff3e00?logo=davinciresolve)](https://www.blackmagicdesign.com/products/davinciresolve)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENCE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#contributing)
@@ -24,6 +24,8 @@ If you've ever opened a DaVinci Resolve project and seen a wall of red "media of
 Maybe you moved your footage to a new drive. Maybe someone renamed the folders. Maybe you re-ingested a camera card and now Resolve can't find anything. Whatever happened, Media Relinker points at a folder, looks at each file on disk, and figures out which missing clip it belongs to — even when the filename has changed.
 
 Click **Scan**, review the matches, click **Relink Selected**. Done.
+
+> **Note**: This plugin requires DaVinci Resolve **Studio**. Blackmagic disabled the scripting UI framework (Fusion UIManager) on the free version of Resolve in version 19.1 (late 2024), so plugins with a graphical interface — including this one — no longer work there.
 
 ---
 
@@ -89,7 +91,7 @@ To uninstall, run `python install.py --uninstall`.
 <details>
 <summary><b>Does this work on the free version of DaVinci Resolve?</b></summary>
 
-Yes. That was the main reason for building it. Most Resolve automation plugins need the paid Studio edition. This one runs entirely inside Resolve itself, so the free edition works fine.
+No, unfortunately not. In Resolve **19.1** (late 2024) Blackmagic disabled the Fusion UIManager on the free version, which is what this plugin uses to draw its window. Media Relinker needs **Resolve Studio 19.1 or newer**. It is not a licensing choice on our end — the UI framework simply isn't available on free Resolve any more.
 
 </details>
 
