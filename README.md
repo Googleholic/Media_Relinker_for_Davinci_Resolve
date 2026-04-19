@@ -2,340 +2,156 @@
 
 # Media Relinker for DaVinci Resolve
 
-**Automatically find and relink offline media clips using deep metadata matching.**
+**Get your missing clips back, fast.**
 
-Works on free DaVinci Resolve and Studio. Everything runs locally.
+Works on free DaVinci Resolve and Studio. Runs entirely on your own machine.
 
 [![Resolve](https://img.shields.io/badge/DaVinci%20Resolve-18%2B-ff3e00?logo=davinciresolve)](https://www.blackmagicdesign.com/products/davinciresolve)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)]()
-[![Lua](https://img.shields.io/badge/Lua-5.1-000080?logo=lua)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENCE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#contributing)
 
 </div>
 
-![Before vs after: offline clips in Resolve, then relinked via Media Relinker](docs/before-vs-after.png)
+![Before and after: a Resolve project full of red offline clips, then fully relinked with Media Relinker](docs/before-vs-after.png)
 
 ---
 
-## Overview
+## What is this?
 
-When a project opens with missing footage (drive letter changed, files moved, camera cards re-ingested to a new NAS), Media Relinker scans folders you point it at, extracts metadata with ExifTool, and scores every file on disk against every offline clip in your Media Pool.
+If you've ever opened a DaVinci Resolve project and seen a wall of red "media offline" clips, this plugin is for you.
 
-Ranked candidates appear in a tree grouped into High, Medium, Low and None buckets. High-confidence rows are pre-ticked for auto-relink. Medium rows are shown as strong suggestions. Low and None rows stay unchecked. One click relinks confirmed matches through Resolve's scripting API.
+Maybe you moved your footage to a new drive. Maybe someone renamed the folders. Maybe you re-ingested a camera card and now Resolve can't find anything. Whatever happened, Media Relinker points at a folder, looks at each file on disk, and figures out which missing clip it belongs to — even when the filename has changed.
 
----
-
-## Table of contents
-
-1. [Why this plugin](#why-this-plugin)
-2. [Features](#features)
-3. [Requirements](#requirements)
-4. [Installation](#installation)
-5. [Usage](#usage)
-6. [How matching works](#how-matching-works)
-7. [Configuration](#configuration)
-8. [Troubleshooting](#troubleshooting)
-9. [FAQ](#faq)
-10. [Limitations](#limitations)
-11. [Contributing](#contributing)
-12. [License](#license)
+Click **Scan**, review the matches, click **Relink Selected**. Done.
 
 ---
 
-## Why this plugin
+## Why not just use "Relink Clips" in Resolve?
 
-| Benefit | What it means |
+Resolve's built-in relink works when files have simply moved to a new folder but kept the same name. It matches by filename.
+
+Media Relinker is for everything else — when filenames changed, folders were reorganised, or you've re-ingested camera cards so the originals and the replacements share nothing but the actual footage inside. It looks at the content of each file: timecode, duration, camera serial number, creation date, resolution, codec, and more. So even a completely renamed file can be matched back to the clip it came from.
+
+---
+
+## What you'll see
+
+![The Media Relinker window showing a list of offline clips, each matched against a file on disk with a colour-coded confidence score](docs/GUI.png)
+
+Every offline clip gets a row. Each row shows the best match found on disk, a confidence percentage, and a side-by-side comparison of duration, frame rate, date, time, and resolution — with green / yellow / red ticks so you can see at a glance which fields agree.
+
+Tick the matches you're happy with and press **Relink Selected**.
+
+---
+
+## Install
+
+1. Download or clone this repository.
+2. From the project folder, run the installer:
+
+   ```bash
+   python install.py
+   ```
+
+   On Windows it will download ExifTool automatically. On macOS run `brew install exiftool` first. On Linux run `sudo apt install libimage-exiftool-perl`.
+
+3. Restart DaVinci Resolve.
+
+That's it. If you'd rather not use Python, there's a pure-Lua installer: `lua install.lua` (you'll need to install ExifTool yourself).
+
+To uninstall, run `python install.py --uninstall`.
+
+---
+
+## How to use it
+
+1. Open a Resolve project that has offline clips.
+2. Go to **Workspace → Scripts → Comp → Media Relinker**.
+3. Click **Browse folder…** and pick the folder where your footage lives. You can add more than one. Tick **Include subdirectories** if your footage is in nested folders.
+4. Press **Scan**. This reads each file's metadata (it may take a few minutes the first time on a big library — subsequent scans are much faster).
+5. Look at the results. Rows at high confidence are ticked automatically. Rows at medium confidence are shown but not ticked — you decide.
+6. Press **Relink Selected**.
+
+### The four buttons worth knowing
+
+| Button | What it does |
 |---|---|
-| **Works on free DaVinci Resolve** | Runs inside Resolve's built-in Fusion Lua interpreter. No external scripting server. No Studio requirement. |
-| **Not fooled by a rename** | Matches on 17 weighted metadata fields: timecode, duration, resolution, codec, camera serial, reel name, filename fuzzy, audio channels, and more. |
-| **Fast** | Persistent ExifTool daemon, on-disk metadata cache keyed by size and mtime, duration-delta fast-reject, batched Resolve property reads. |
-| **Reversible** | Every relink is journalled. A History window lets you revert or swap in one of the alternatives captured at match time without a re-scan. |
-| **Configurable** | Thresholds and per-field scoring weights live in a settings dialog and persist across restarts. |
+| **Show** | Hide or show rows by confidence level (High, Medium, Low, No match). |
+| **History** | See every relink you've ever done. Undo any of them. Or pick a different match from the alternatives captured at scan time. |
+| **Settings** | Adjust how strict matching is, or how much each metadata field counts. |
+| **Clear cache** | Forget all remembered metadata. The next scan will re-read every file. |
 
 ---
 
-## Features
-
-- Scan local folders and mapped network drives, with optional recursion.
-- 17-field weighted scoring (timecode, duration, FPS, resolution, codec, camera model and serial, reel name, UMID, MediaUID, filename fuzzy match, audio channels, file size, modification time).
-- Ambiguity detection. Flags any clip where two or more files score above the auto-match threshold, and any source file that multiple offline clips would all claim.
-- Relink history with **Revert** and **Re-pick alternative** actions.
-- Persistent **Show:** filter dropdown (High / Medium / Low / No match).
-- Settings dialog for thresholds and per-field weights.
-- Resumable metadata caching. The second scan over the same footage is near-instant.
-- Session logs at `~/.media_relinker/logs/session_*.log`.
-
----
-
-## Requirements
-
-| Component | Minimum version | Notes |
-|---|---|---|
-| DaVinci Resolve | 18.0 | Free or Studio. |
-| Operating system | Windows 10, macOS 10.15, Ubuntu 20.04 | |
-| ExifTool | 12.0 | Auto-downloaded on Windows. macOS: `brew install exiftool`. Linux: `sudo apt install libimage-exiftool-perl`. |
-| Python | 3.7 | Only for running `install.py`. The plugin itself runs entirely in Resolve's Lua. |
-| Lua (optional) | 5.1 | Only if you prefer `install.lua` over the Python installer. |
-
----
-
-## Installation
-
-Clone or download the repository, then from the project folder:
-
-### Option 1: Python installer (recommended)
-
-Auto-downloads ExifTool on Windows.
-
-```bash
-python install.py
-```
-
-### Option 2: Pure-Lua installer
-
-No ExifTool auto-download.
-
-```bash
-lua install.lua
-```
-
-### What the installer does
-
-```
-media_relinker/      ->  ~/.media_relinker/plugin/media_relinker/
-vendor/              ->  ~/.media_relinker/plugin/vendor/
-Scripts/Comp/*.lua   ->  <Resolve Fusion scripts dir>/Scripts/Comp/
-```
-
-Set `MEDIA_RELINKER_HOME=<repo root>` to override the install root for portable or multi-user setups.
-
-### Uninstall
-
-```bash
-python install.py --uninstall
-```
-
----
-
-## Usage
-
-![Media Relinker GUI — scan results with per-field match quality indicators](docs/GUI.png)
-
-1. Launch DaVinci Resolve and open a project with offline media.
-2. Open **Workspace > Scripts > Comp > Media Relinker**.
-3. Click **Browse folder...** and add one or more folders to scan. Tick **Include subdirectories** if your footage is nested.
-4. Press **Scan**. ExifTool extracts metadata (cached after the first run), then every file is scored against every offline clip.
-5. Review the tree. Rows at or above the auto-match threshold (default 70) are pre-ticked. Expand any row to see alternative candidates.
-6. Adjust the ticks if needed, then press **Relink Selected**.
-
-### Handy buttons
-
-| Button | Purpose |
-|---|---|
-| **Show:** | Filter rows by match quality (High, Medium, Low, No match). Choice persists across sessions. |
-| **History** | List every past relink. Revert to the previous offline path, or re-pick an alternative captured at match time. |
-| **Settings** | Tune auto / strong / weak thresholds and per-field scoring weights. |
-| **Clear cache** | Drop the ExifTool metadata cache. Next scan re-reads every file. |
-
----
-
-## How matching works
-
-Every offline clip and every on-disk file is reduced to a **signature**, a table of metadata fields. The matcher scores each file against each clip with a weighted sum where every field contributes independently:
-
-```
-score = sum over fields of (weight_i * match_i)
-```
-
-`match_i` is `1` for an exact match, fractional for a fuzzy match (filename Levenshtein, timecode within N frames, duration within 1 %), and `0` otherwise. Weights are configurable. Defaults prioritise strong indicators (UMID, timecode and duration combined, camera serial plus date) over weak ones (filename, FPS alone).
-
-Before scoring, a **fast-reject gate** drops any candidate whose duration differs from the target clip by more than one second. This skips the heavy per-candidate parsing for files that can't possibly be a match, and accounts for most of the scan-time speed-up on large libraries.
-
-### Score buckets
-
-| Bucket | Default range | Default action |
-|---|---|---|
-| **High** | 70 and up | Pre-ticked for relink |
-| **Medium** | 50 to 69 | Shown, not ticked |
-| **Low** | 20 to 49 | Hidden by default filter |
-| **None** | below 20 | Hidden by default filter |
-
-You always retain veto power before any clip is relinked.
-
----
-
-## Configuration
-
-Settings live at `~/.media_relinker/config.json`. Edit directly, or use the **Settings** dialog inside the plugin.
-
-```json
-{
-  "auto_match_threshold": 70,
-  "strong_threshold": 50,
-  "weak_threshold": 20,
-  "weights": {
-    "umid_exact": 100,
-    "tc_duration_exact": 80,
-    "start_tc_exact": 40,
-    "duration_frame_exact": 30,
-    "camera_serial_date": 40,
-    "reel_name_exact": 25,
-    "filename_exact": 10,
-    "filename_fuzzy": 5
-  },
-  "extensions": {
-    "video": [".mov", ".mp4", ".mxf", ".avi", ".mkv", ".braw", ".r3d", ".m4v"],
-    "image": [".jpg", ".jpeg", ".png", ".tiff", ".tif", ".dpx", ".exr"],
-    "audio": [".wav", ".aif", ".aiff", ".mp3", ".flac", ".aac"]
-  },
-  "show_filters": {"high": true, "medium": true, "low": true, "none": true}
-}
-```
-
-### Data directory layout
-
-```
-~/.media_relinker/
-  config.json          user preferences, weights, thresholds
-  cache.json           ExifTool metadata cache (size + mtime keyed)
-  relink_log.json      reversible journal (capped at 2000 entries)
-  history.json         per-scan session summaries
-  logs/
-    session_*.log      per-session log files
-  plugin/
-    media_relinker/    installed Lua package
-    vendor/            vendored dependencies (json.lua)
-    bin/               bundled ExifTool (Windows only)
-```
-
----
-
-## Troubleshooting
+## Frequently asked questions
 
 <details>
-<summary><b>The script entry doesn't appear under Workspace > Scripts.</b></summary>
+<summary><b>Does this work on the free version of DaVinci Resolve?</b></summary>
 
-Re-run `python install.py` and restart Resolve. Verify the file landed under Resolve's `Fusion/Scripts/Comp/` directory.
+Yes. That was the main reason for building it. Most Resolve automation plugins need the paid Studio edition. This one runs entirely inside Resolve itself, so the free edition works fine.
 
 </details>
 
 <details>
-<summary><b>"Could not locate the media_relinker Lua package"</b></summary>
+<summary><b>Will it change my original files?</b></summary>
 
-The installer didn't complete, or `MEDIA_RELINKER_HOME` points somewhere wrong. Re-run the installer, or set the env var to the repo root.
-
-</details>
-
-<details>
-<summary><b>ExifTool not found</b></summary>
-
-- **Windows**: drop `exiftool.exe` into `~/.media_relinker/plugin/bin/windows/`.
-- **macOS**: `brew install exiftool`.
-- **Linux**: `sudo apt install libimage-exiftool-perl`.
+No. Media Relinker only updates where Resolve points to look for a clip. Your footage on disk is never moved, renamed, or modified. And every relink is logged, so you can undo it from the History window at any time.
 
 </details>
 
 <details>
-<summary><b>"No offline clips found" but the Media Pool shows red badges</b></summary>
+<summary><b>How does it actually match clips?</b></summary>
 
-Only Video, Audio, Still and Image clip types are scanned. Timelines, Compound Clips and Fusion Comps are skipped by design. Otherwise, check `~/.media_relinker/logs/session_*.log` for the offline-probe section.
-
-</details>
-
-<details>
-<summary><b>A Windows cmd window flashes briefly during scan</b></summary>
-
-A single cmd flash per scan is expected. Lua 5.1's `io.popen` routes through `cmd.exe` on Windows, and the persistent ExifTool daemon consolidates the whole scan into a single process launch. No cmd window should appear during clip matching itself.
-
-</details>
-
----
-
-## FAQ
-
-<details>
-<summary><b>Does it work on free DaVinci Resolve?</b></summary>
-
-Yes. That's the main reason this plugin exists. It runs inside Resolve's built-in Fusion Lua interpreter, so it does not need the Studio-only external scripting server.
+It looks at the metadata embedded inside each file — things like timecode, duration, camera serial number, creation date, frame rate, resolution, and codec. The more of these that agree between your offline clip and a file on disk, the higher the confidence score. A perfect match on timecode and duration alone is usually enough.
 
 </details>
 
 <details>
-<summary><b>Does it modify my original media files?</b></summary>
+<summary><b>What file formats work?</b></summary>
 
-No. Media Relinker only writes to Resolve's Media Pool (via `ReplaceClip`). Your source files on disk are never touched. Every relink is journalled and reversible.
-
-</details>
-
-<details>
-<summary><b>What about RAW and camera-proprietary formats?</b></summary>
-
-BRAW, R3D, ARRIRAW, ProRes, DNxHR, H.264, HEVC and common still formats all work. Anything ExifTool can read metadata from is supported. Timecode and duration are the strongest signals, so formats that carry accurate timecode relink most reliably.
+Anything ExifTool can read: BRAW, R3D, ARRIRAW, ProRes, DNxHR, H.264, HEVC, MP4, MOV, MXF, plus common image and audio formats (WAV, AIFF, JPG, TIFF, DPX, EXR, etc.). Files with accurate embedded timecode relink most reliably.
 
 </details>
 
 <details>
-<summary><b>Can I relink proxies or transcodes back to camera originals (or vice versa)?</b></summary>
+<summary><b>Can I relink proxies back to camera originals?</b></summary>
 
-Yes, as long as timecode and duration line up. Use the Settings dialog to lower `auto_match_threshold` if your proxies carry fewer matching metadata fields than the originals.
+Yes, as long as they share timecode and duration. If your proxies don't carry much metadata, open **Settings** and lower the auto-match threshold.
 
 </details>
 
 <details>
-<summary><b>Does this replace Resolve's built-in "Relink Clips"?</b></summary>
+<summary><b>What if it matches the wrong file?</b></summary>
 
-They complement each other. Resolve's built-in tool matches by filename and folder structure, which is fast when files have simply moved. Media Relinker shines when filenames changed, folder structures were reorganised, or the original and replacement share only deep metadata.
+You can untick it before relinking. If you've already relinked, open **History** and either revert it, or pick one of the alternative candidates that were captured at scan time.
 
 </details>
 
----
+<details>
+<summary><b>The script doesn't show up in Resolve's Scripts menu.</b></summary>
 
-## Limitations
+Re-run the installer and restart Resolve. If that doesn't work, check that the script was copied to Resolve's `Fusion/Scripts/Comp/` folder.
 
-- ExifTool is required. There is no built-in fallback extractor.
-- Scanning is single-threaded (Fusion Lua has no threadpool). Batching keeps wall-clock time acceptable in practice.
+</details>
+
+<details>
+<summary><b>It says "No offline clips found" but I can see red clips in my Media Pool.</b></summary>
+
+Media Relinker looks at video, audio and still clips. It skips Timelines, Compound Clips and Fusion Comps on purpose. If you only have those, there's nothing to relink.
+
+</details>
 
 ---
 
 ## Contributing
 
-Pull requests welcome. The codebase is small (around 3 000 lines across a dozen modules) and heavily commented.
+Pull requests are welcome. The plugin is a few thousand lines of Lua split across about a dozen files — have a look around and open an issue if anything is unclear.
 
-<details>
-<summary><b>Module map</b></summary>
-
-| Module | Responsibility |
-|---|---|
-| `main.lua` | Entry point, scan orchestration, relink, revert, re-pick. |
-| `matcher.lua` | Scoring pipeline, ambiguity and shared-source detection. |
-| `exiftool.lua` | Persistent daemon, argfile batching, output normalisation. |
-| `resolve_interface.lua` | Media Pool walking, offline clip enumeration, signature extraction via batched `GetClipProperty()`. |
-| `ui.lua` | Fusion UIManager GUI (tree, filter dropdown, history, settings). |
-| `scanner.lua` | Recursive media-file walk, extension filtering. |
-| `cache.lua` | JSON-backed metadata cache. |
-| `config.lua` | User settings, path helpers. |
-| `logger.lua` | Session-file and stderr logging. |
-| `fs.lua` | Filesystem abstraction (LuaFileSystem, `bmd.readdir`, `io.open`). |
-| `history.lua`, `relink_log.lua` | Scan summaries and reversible relink journal. |
-| `levenshtein.lua`, `timecode.lua`, `json.lua` | Small utility modules. |
-
-</details>
-
-Run tests with `lua tests/run.lua` from the repo root.
+Tests live under `tests/`. Run them with `lua tests/run_all.lua`.
 
 ---
 
 ## License
 
-MIT. See [LICENCE](LICENCE). Vendored `vendor/json.lua` is by [rxi](https://github.com/rxi/json.lua), MIT-licensed.
-
----
-
-<div align="center">
-
-**Keywords**
-
-DaVinci Resolve plugin, relink offline media, missing clips, Media Pool, free DaVinci Resolve, Fusion Lua, ExifTool, timecode matching, BRAW, R3D, ProRes, DNxHR.
-
-</div>
+MIT. See [LICENCE](LICENCE). The bundled JSON parser (`vendor/json.lua`) is by [rxi](https://github.com/rxi/json.lua), also MIT.
