@@ -153,4 +153,26 @@ function M.walk_media(root, recursive, extensions)
   return results
 end
 
+-- Cached variant: if walk_cache has a usable entry for (root, recursive, exts),
+-- return its stored file list without touching the filesystem. Otherwise walk
+-- normally and populate the cache. Pass force=true to always rewalk.
+function M.walk_media_cached(root, recursive, extensions, walk_cache, force)
+  local exts = extensions or M.default_extensions()
+  if walk_cache and not force then
+    local entry = walk_cache:get(root, recursive, exts)
+    if entry and entry.files then
+      logger.info("Walk cache HIT for %s (recursive=%s) — %d files (scanned_at=%s)",
+        root, tostring(recursive), #entry.files, tostring(entry.scanned_at))
+      return entry.files
+    end
+  end
+  local files = M.walk_media(root, recursive, exts)
+  if walk_cache then
+    walk_cache:put(root, recursive, exts, files)
+    logger.info("Walk cache STORED for %s (recursive=%s) — %d files",
+      root, tostring(recursive), #files)
+  end
+  return files
+end
+
 return M

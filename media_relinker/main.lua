@@ -1,6 +1,7 @@
 local config = require("media_relinker.config")
 local logger_mod = require("media_relinker.logger")
 local Cache = require("media_relinker.cache")
+local WalkCache = require("media_relinker.walk_cache")
 local ExifTool = require("media_relinker.exiftool")
 local Matcher = require("media_relinker.matcher")
 local History = require("media_relinker.history")
@@ -102,13 +103,16 @@ local function ensure_full_signatures(clip_infos, is_cancelled)
   return true
 end
 
-local function dedupe_walk(folders, recursive)
+local function dedupe_walk(folders, recursive, walk_cache, force_rescan)
   local paths = {}
   local seen = {}
+  local exts = scanner.default_extensions()
   for _, fld in ipairs(folders) do
-    logger.info("Walking folder: %s (recursive=%s)", fld, tostring(recursive))
+    logger.info("Walking folder: %s (recursive=%s, force=%s)",
+      fld, tostring(recursive), tostring(force_rescan))
     local before = #paths
-    local ok, files = pcall(scanner.walk_media, fld, recursive, scanner.default_extensions())
+    local ok, files = pcall(scanner.walk_media_cached,
+      fld, recursive, exts, walk_cache, force_rescan)
     if not ok then
       logger.warn("Walk failed for %s: %s", fld, tostring(files))
     else
@@ -124,17 +128,21 @@ local function dedupe_walk(folders, recursive)
   return paths
 end
 
-function M.scan_and_match(folders, recursive, clip_infos, is_cancelled, on_progress)
+function M.scan_and_match(folders, recursive, clip_infos, is_cancelled, on_progress, opts)
   is_cancelled = is_cancelled or function() return false end
   on_progress = on_progress or function() end
+  opts = opts or {}
   if type(folders) == "string" then folders = {folders} end
   folders = folders or {}
   on_progress("prep", 0, #clip_infos)
   if not ensure_full_signatures(clip_infos, is_cancelled) then return {} end
   if is_cancelled() then return {} end
   on_progress("walk", 0, 0)
-  logger.info("Scanning %d folder(s) (recursive=%s)", #folders, tostring(recursive))
-  local paths = dedupe_walk(folders, recursive)
+  logger.info("Scanning %d folder(s) (recursive=%s, force_rescan=%s)",
+    #folders, tostring(recursive), tostring(opts.force_rescan))
+  local walk_cache = WalkCache.new()
+  local paths = dedupe_walk(folders, recursive, walk_cache, opts.force_rescan)
+  walk_cache:flush()
   logger.info("Walk complete: %d unique media files", #paths)
   on_progress("walk_done", #paths, #paths)
 
@@ -431,14 +439,18 @@ function M.run()
 
   logger.info("Building Fusion UI window...")
   local win = ui.new(clip_infos, {
-    on_scan = function(folders, recursive, is_cancelled)
-      return M.scan_and_match(folders, recursive, clip_infos, is_cancelled)
+    on_scan = function(folders, recursive, is_cancelled, on_progress, opts)
+      return M.scan_and_match(folders, recursive, clip_infos, is_cancelled, on_progress, opts)
     end,
     on_relink = function(selections)
       return M.perform_relink(selections)
     end,
     on_clear_cache = function()
       local c = Cache.new(); c:clear(); c:flush()
+      local w = WalkCache.new(); w:clear(); w:flush()
+    end,
+    on_known_roots = function()
+      return WalkCache.new():roots()
     end,
     on_revert = function(entry_id)
       return M.revert_relink(entry_id, media_pool)

@@ -569,6 +569,9 @@ function RelinkerWindow:_run_fusion()
     ui:HGroup{
       Weight = 0,
       ui:CheckBox{ID = "Recursive", Text = "Include subdirectories", Checked = true},
+      ui:CheckBox{ID = "ForceRescan", Text = "Rescan from disk",
+        Checked = false,
+        ToolTip = "Ignore the persistent folder cache and re-walk every root."},
       ui:HGap(0, 1),
       ui:Button{ID = "ScanBtn", Text = "Scan", Weight = 0},
       ui:Button{ID = "ClearCacheBtn", Text = "Clear cache", Weight = 0},
@@ -622,6 +625,16 @@ function RelinkerWindow:_run_fusion()
     hdr.Text[8] = "Resolution (offline | match)"
     tree:SetHeaderItem(hdr)
   end)
+
+  -- Pre-fill folder list with previously scanned roots so cross-project
+  -- scans don't require re-typing the same paths.
+  if self.callbacks.on_known_roots then
+    local ok, roots = pcall(self.callbacks.on_known_roots)
+    if ok and type(roots) == "table" and #roots > 0 then
+      pcall(function() items.FolderEdit.Text = table.concat(roots, "\n") end)
+      logger.info("Pre-filled FolderEdit with %d known root(s)", #roots)
+    end
+  end
 
   self:_populate_tree(tree, show_filters)
 
@@ -697,6 +710,7 @@ function RelinkerWindow:_run_fusion()
       return
     end
     local recursive = items.Recursive.Checked and true or false
+    local force_rescan = items.ForceRescan and items.ForceRescan.Checked and true or false
     self.cancel_flag = false
     items.ScanBtn.Text = "Scanning..."
     local fu_ref = self._fu
@@ -735,7 +749,8 @@ function RelinkerWindow:_run_fusion()
       end
       return self.cancel_flag
     end
-    local ok, res = pcall(self.callbacks.on_scan, folders, recursive, is_cancelled, on_progress)
+    local ok, res = pcall(self.callbacks.on_scan, folders, recursive, is_cancelled, on_progress,
+      {force_rescan = force_rescan})
     items.ScanBtn.Text = "Scan"
     if self.cancel_flag then
       set_status("Cancelled")
